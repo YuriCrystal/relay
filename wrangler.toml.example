@@ -1,0 +1,26 @@
+name = "relay"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+
+# ── D1 資料庫綁定 ──────────────────────────────────────────────
+# 先用 `wrangler d1 create relay` 建立，把回傳的 database_id 貼進來
+[[d1_databases]]
+binding = "DB"
+database_name = "relay"
+database_id = "<your-d1-database-id>"
+
+# ── 非機密變數 ─────────────────────────────────────────────────
+[vars]
+# 後台網域；留 "*" 放行所有來源（API 仍需 Bearer token）
+# 上線後建議改成你的後台網址，例如 "https://relay-admin.pages.dev"
+DASH_ORIGIN = "*"
+
+# ── 機密（勿寫在這裡）──────────────────────────────────────────
+# ADMIN_TOKEN 用指令設定，不要進版控：
+#   wrangler secret put ADMIN_TOKEN
+#
+# ── 自訂網域（選用）───────────────────────────────────────────
+# 想用自己的短網域（例如 relay.to），在 Cloudflare 加好網域後解開：
+# [[routes]]
+# pattern = "relay.to/*"
+# custom_domain = true

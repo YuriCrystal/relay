@@ -1,0 +1,21 @@
+# Cloudflare / wrangler
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# 你的真實設定（含 database_id）：用 wrangler.toml.example 當範本，自己的別上傳
+wrangler.toml
+
+# 機密 / 暫存
+*.secrets*.json
+.secrets.tmp.json
+.env
+.env.*
+
+# 相依套件
+node_modules/
+
+# 系統
+.DS_Store
+Thumbs.db
+*.log
