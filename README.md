@@ -102,10 +102,13 @@ wrangler deploy
 
 ---
 
-## 上線前兩個務實提醒
+## 上線前提醒
 
-1. **QR 產生器**：後台預覽用了外部端點 `api.qrserver.com` 方便即看即用。正式環境建議改自架產生器（例如在 Worker 加一條 `/qr` 路由用純 JS 產生），避免依賴第三方。
-2. **防濫用**：短網址容易被拿去當釣魚跳板。上線前建議接一層惡意網址檢查（Cloudflare 的 URL Scanner / Safe Browsing），在 `apiCreate` 與轉址前擋掉黑名單目的地，保護你的網域信譽。
+1. **目的地網址**：建立／更新連結時已強制只收 `http(s)`，從源頭擋掉 `javascript:`／`data:` 等可被濫用的 scheme。
+2. **防濫用**：目的地網域黑名單已內建——在 `wrangler.toml` 設 `BLOCKLIST = "a.com,b.com"` 即可擋掉指定網域（含子網域），零金鑰。要再強，設 `SAFEBROWSING_KEY`（`wrangler secret put`）就會在建立連結時用 Google Safe Browsing 查惡意網址；不設＝不啟用，照樣能跑。
+3. **時區**：後台統計（今日點擊／日趨勢／時段熱度）依 `wrangler.toml` 的 `TZ_OFFSET` 計算，預設 `+8`（台灣）。在其他地區記得改成你的時區。
+
+> QR 由後台**內嵌的 qrcode-generator（MIT）在瀏覽器本地產生**，不打任何第三方端點——你的連結目標不會外流，也不依賴外部服務的存活。
 
 ---
 
@@ -115,7 +118,21 @@ wrangler deploy
 - 連結密碼以 `sha256(slug + ':' + 密碼)` 雜湊存放，不存明碼。
 - 所有 D1 查詢都用 prepared statement 綁參數，避免 SQL injection。
 - 中介頁的目的地網址以 `JSON.stringify` / 屬性跳脫安全嵌入，避免 XSS。
+- 目的地網址只放行 `http`／`https`，從源頭擋掉 `javascript:`／`data:` 等危險 scheme。
+- QR 在瀏覽器本地產生（內嵌 qrcode-generator），不打外部端點。
 - `robots.txt` 預設 `Disallow: /`，短網址不被搜尋引擎收錄。
+
+---
+
+## 費用
+
+**完全自架，跑在你自己的 Cloudflare 帳號**——沒有中央伺服器，作者不替任何人付費。對絕大多數人就是 **$0**：
+
+- Workers 免費層：每天 10 萬次請求
+- D1 免費層：5GB 儲存、每天數百萬列讀取
+- Pages（放後台 `index.html`）：免費
+
+只有超過免費額度才付費，而且付的是**你自己**的 Cloudflare 帳單，跟作者與其他使用者完全無關。fork 下去、填自己的 `database_id` 與 `ADMIN_TOKEN`，這套就 100% 是你的。
 
 ---
 

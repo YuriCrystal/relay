@@ -148,7 +148,7 @@ async function recordClick(env, link, { slug, suffix, variant, request, agent, u
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(
       link.id, slug, suffix.slice(0, 64), variant, iso,
-      iso.slice(0, 10), now.getUTCHours(),
+      localDay(env, now.getTime()), localHour(env, now.getTime()),
       country, agent.device, agent.os, agent.browser,
       referrer.slice(0, 300), ua.slice(0, 400)
     ).run();
@@ -208,7 +208,7 @@ async function apiOverview(env) {
   const links = await env.DB.prepare('SELECT COUNT(*) AS n FROM links').first();
   const active = await env.DB.prepare('SELECT COUNT(*) AS n FROM links WHERE active=1').first();
   const clicks = await env.DB.prepare('SELECT COUNT(*) AS n FROM clicks').first();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDay(env, Date.now());
   const todayClicks = await env.DB.prepare(
     'SELECT COUNT(*) AS n FROM clicks WHERE ts_day = ?'
   ).bind(today).first();
@@ -216,7 +216,7 @@ async function apiOverview(env) {
   const series = await env.DB.prepare(
     `SELECT ts_day AS day, COUNT(*) AS n FROM clicks
      WHERE ts_day >= ? GROUP BY ts_day ORDER BY ts_day`
-  ).bind(daysAgo(13)).all();
+  ).bind(daysAgo(env, 13)).all();
   const top = await env.DB.prepare(
     `SELECT l.id, l.slug, l.title, COUNT(c.id) AS clicks
      FROM links l LEFT JOIN clicks c ON c.link_id = l.id
@@ -254,7 +254,7 @@ async function apiCreate(env, body) {
   if (dup) throw new Error('slug 已被使用');
 
   const now = new Date().toISOString();
-  const f = await normFields(body);
+  const f = await normFields(body, env);
   const res = await env.DB.prepare(
     `INSERT INTO links
        (slug,title,mode,target_url,variants_json,redirect_type,password_hash,
@@ -282,7 +282,7 @@ async function apiUpdate(env, id, body) {
     if (dup) throw new Error('slug 已被使用');
   }
 
-  const f = await normFields({ ...link, ...body, password: body.password });
+  const f = await normFields({ ...link, ...body, password: body.password }, env);
   const active = body.active === undefined ? link.active : (body.active ? 1 : 0);
   const now = new Date().toISOString();
   await env.DB.prepare(
@@ -308,7 +308,7 @@ async function apiDelete(env, id) {
 async function apiStats(env, id, days) {
   const link = await env.DB.prepare('SELECT * FROM links WHERE id = ?').bind(id).first();
   if (!link) throw new Error('link not found');
-  const since = daysAgo(days - 1);
+  const since = daysAgo(env, days - 1);
 
   const grp = (col) => env.DB.prepare(
     `SELECT ${col} AS k, COUNT(*) AS n FROM clicks
@@ -352,25 +352,46 @@ async function apiStats(env, id, days) {
 
 /* ───────────────────────── 欄位處理 ───────────────────────── */
 
-async function normFields(body) {
+async function normFields(body, env) {
   const mode = ['simple', 'ab', 'device'].includes(body.mode) ? body.mode : 'simple';
+
+  const target_url = String(body.target_url || '');
 
   let variants_json = '';
   if (mode === 'ab') {
     const arr = Array.isArray(body.variants) ? body.variants
       : safeParse(body.variants_json, []);
-    variants_json = JSON.stringify(
-      arr.filter((v) => v && v.url).map((v) => ({
-        url: String(v.url), weight: Number(v.weight) || 1, label: String(v.label || ''),
-      }))
-    );
+    const valid = arr.filter((v) => v && v.url).map((v) => ({
+      url: String(v.url), weight: Number(v.weight) || 1, label: String(v.label || ''),
+    }));
+    valid.forEach((v, i) => assertHttp(v.url, 'A/B 第 ' + (i + 1) + ' 個目的地'));
+    variants_json = JSON.stringify(valid);
   } else if (mode === 'device') {
     const d = body.variants && typeof body.variants === 'object' && !Array.isArray(body.variants)
       ? body.variants : safeParse(body.variants_json, {});
-    variants_json = JSON.stringify({
+    const dev = {
       ios: String(d.ios || ''), android: String(d.android || ''), default: String(d.default || ''),
-    });
+    };
+    if (dev.ios) assertHttp(dev.ios, 'iOS 目的地');
+    if (dev.android) assertHttp(dev.android, 'Android 目的地');
+    if (dev.default) assertHttp(dev.default, '預設目的地');
+    variants_json = JSON.stringify(dev);
+  } else if (target_url) {
+    assertHttp(target_url, '目的地網址');
   }
+
+  // 黑名單 + 選用 Safe Browsing（建立/更新時擋掉惡意或不想要的目的地）
+  const dests = mode === 'ab'
+    ? safeParse(variants_json, []).map((v) => v.url)
+    : mode === 'device'
+      ? ['ios', 'android', 'default'].map((k) => safeParse(variants_json, {})[k]).filter(Boolean)
+      : (target_url ? [target_url] : []);
+  for (const u of dests) {
+    const h = hostOf(u);
+    if (blocklistedHost(h, env)) throw new Error('目的地網域在黑名單內：' + h);
+  }
+  const flagged = await safeBrowsingBad(dests, env);
+  if (flagged.size) throw new Error('目的地被 Safe Browsing 標記為惡意：' + [...flagged][0]);
 
   // 密碼：傳 password 才更新；傳空字串＝清除；沒傳就沿用既有 hash
   // hash 綁 slug，避免不同連結同密碼產生同 hash
@@ -387,7 +408,7 @@ async function normFields(body) {
   return {
     title: String(body.title || ''),
     mode,
-    target_url: String(body.target_url || ''),
+    target_url,
     variants_json,
     redirect_type: Number(body.redirect_type) === 301 ? 301 : 302,
     password_hash,
@@ -493,7 +514,10 @@ async function sha256(str) {
 }
 
 function normSlug(s) {
-  return String(s || '').trim().replace(/^\/+|\/+$/g, '').replace(/\s+/g, '-');
+  return String(s || '').trim()
+    .replace(/^\/+|\/+$/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/[^A-Za-z0-9_-]/g, ''); // 只留英數與 - _，避免奇怪字元產生對不上的路由
 }
 
 function safeParse(s, fallback) {
@@ -507,9 +531,68 @@ function pick(obj, keys) {
   return out;
 }
 
-function daysAgo(n) {
-  const d = new Date(Date.now() - n * 86400000);
-  return d.toISOString().slice(0, 10);
+function tzOffsetHours(env) {
+  const n = Number(env && env.TZ_OFFSET);
+  return Number.isFinite(n) ? n : 8; // 預設台灣 +8；用 wrangler.toml 的 TZ_OFFSET 改
+}
+function localDay(env, ms) {
+  return new Date(ms + tzOffsetHours(env) * 3600000).toISOString().slice(0, 10);
+}
+function localHour(env, ms) {
+  return new Date(ms + tzOffsetHours(env) * 3600000).getUTCHours();
+}
+function daysAgo(env, n) {
+  return localDay(env, Date.now() - n * 86400000);
+}
+
+// 目的地只放行 http/https，擋掉 javascript:/data: 等可被濫用的 scheme
+function assertHttp(u, label) {
+  let parsed;
+  try { parsed = new URL(String(u)); }
+  catch { throw new Error((label || '網址') + '不是合法網址'); }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error((label || '網址') + '只接受 http / https 連結');
+  }
+}
+
+function hostOf(u) {
+  try { return new URL(String(u)).hostname.toLowerCase(); } catch { return ''; }
+}
+
+// 目的地網域黑名單：BLOCKLIST 環境變數（逗號分隔），比對主機與其子網域
+function blocklistedHost(host, env) {
+  if (!host) return false;
+  const raw = (env && env.BLOCKLIST) ? String(env.BLOCKLIST) : '';
+  const list = raw.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+  return list.some((b) => host === b || host.endsWith('.' + b));
+}
+
+// 選用：設了 SAFEBROWSING_KEY（wrangler secret）才啟用 Google Safe Browsing 查惡意網址
+async function safeBrowsingBad(urls, env) {
+  if (!env || !env.SAFEBROWSING_KEY || !urls.length) return new Set();
+  try {
+    const res = await fetch(
+      'https://safebrowsing.googleapis.com/v4/threatMatches:find?key=' + encodeURIComponent(env.SAFEBROWSING_KEY),
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          client: { clientId: 'relay', clientVersion: '1.0' },
+          threatInfo: {
+            threatTypes: ['MALWARE', 'SOCIAL_ENGINEERING', 'UNWANTED_SOFTWARE', 'POTENTIALLY_HARMFUL_APPLICATION'],
+            platformTypes: ['ANY_PLATFORM'],
+            threatEntryTypes: ['URL'],
+            threatEntries: urls.map((u) => ({ url: u })),
+          },
+        }),
+      }
+    );
+    if (!res.ok) return new Set(); // 查詢失敗就放行，避免外部服務掛掉導致無法建立連結
+    const data = await res.json();
+    const bad = new Set();
+    for (const m of (data.matches || [])) if (m.threat && m.threat.url) bad.add(m.threat.url);
+    return bad;
+  } catch { return new Set(); }
 }
 
 function escapeAttr(s) {

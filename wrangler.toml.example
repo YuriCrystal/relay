@@ -15,9 +15,20 @@ database_id = "<your-d1-database-id>"
 # 上線後建議改成你的後台網址，例如 "https://relay-admin.pages.dev"
 DASH_ORIGIN = "*"
 
+# 後台統計用的時區偏移（小時）。台灣 +8；其他地區改成你的時區（例：美西 -8、UTC 0）。
+# 影響「今日點擊」換日時間、日趨勢分日、時段熱度的小時。
+TZ_OFFSET = "8"
+
+# 目的地網域黑名單（逗號分隔），擋掉你不想被指向的網域；比對主機與其子網域。
+# 留空＝不啟用。例：BLOCKLIST = "bit.ly,grabify.link,iplogger.org"
+BLOCKLIST = ""
+
 # ── 機密（勿寫在這裡）──────────────────────────────────────────
 # ADMIN_TOKEN 用指令設定，不要進版控：
 #   wrangler secret put ADMIN_TOKEN
+#
+# （選用）Google Safe Browsing 金鑰，設了才會在建立連結時查惡意網址（不設＝不啟用）：
+#   wrangler secret put SAFEBROWSING_KEY
 #
 # ── 自訂網域（選用）───────────────────────────────────────────
 # 想用自己的短網域（例如 relay.to），在 Cloudflare 加好網域後解開：
