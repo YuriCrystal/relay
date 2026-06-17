@@ -1,5 +1,7 @@
 # Relay · 自架短網址系統
 
+[English](README.en.md) · **繁體中文**
+
 一套你完全擁有的短網址系統，跑在 Cloudflare 邊緣節點。
 **單一 Worker** 同時是轉址引擎與後台 API，資料存 **D1**，後台是**單檔 `index.html`**（零建置、零外部依賴）。
 
