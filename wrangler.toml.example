@@ -27,12 +27,33 @@ BLOCKLIST = ""
 # 會被轉址但不記錄點擊。留空＝照常記錄。
 RESPECT_DNT = ""
 
+# （選用）點擊保留天數：搭配下面 [triggers] 排程，自動刪掉超過 N 天的點擊。留空＝永久保留。
+RETENTION_DAYS = ""
+
+# （選用）轉址邊緣快取 TTL 秒數（只有綁了 LINKS_KV 才有用，最小 60）。
+# CACHE_TTL = "60"
+
 # ── 機密（勿寫在這裡）──────────────────────────────────────────
 # ADMIN_TOKEN 用指令設定，不要進版控：
 #   wrangler secret put ADMIN_TOKEN
 #
 # （選用）Google Safe Browsing 金鑰，設了才會在建立連結時查惡意網址（不設＝不啟用）：
 #   wrangler secret put SAFEBROWSING_KEY
+#
+# （選用）SALT：不重複訪客去重的雜湊鹽；不設＝用 ADMIN_TOKEN。
+#   wrangler secret put SALT
+#
+# ── 轉址邊緣快取（選用）───────────────────────────────────────
+# 建 KV namespace 後綁成 LINKS_KV，轉址會先讀 KV 快取、降低 D1 讀取與延遲。
+# 建立：wrangler kv namespace create LINKS_KV，把回傳 id 填進來、解開下面三行：
+# [[kv_namespaces]]
+# binding = "LINKS_KV"
+# id = "<your-kv-namespace-id>"
+#
+# ── 自動清理舊點擊（選用）─────────────────────────────────────
+# 設好上面的 RETENTION_DAYS，再解開下面兩行，每天 03:00 UTC 自動刪超過 N 天的點擊：
+# [triggers]
+# crons = ["0 3 * * *"]
 #
 # ── 自訂網域（選用）───────────────────────────────────────────
 # 想用自己的短網域（例如 relay.to），在 Cloudflare 加好網域後解開：

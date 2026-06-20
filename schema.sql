@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS clicks (
   os        TEXT    DEFAULT 'unknown',
   browser   TEXT    DEFAULT 'unknown',
   referrer  TEXT    DEFAULT '',   -- 只存來源網域（隱私），不存完整網址；原始 UA 不存
+  visitor_hash TEXT DEFAULT '',   -- 每日輪替雜湊，僅供「不重複訪客」去重；IP/UA 不落地
   FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
 );
 
@@ -47,3 +48,4 @@ CREATE INDEX IF NOT EXISTS idx_clicks_link    ON clicks(link_id);
 CREATE INDEX IF NOT EXISTS idx_clicks_day     ON clicks(link_id, ts_day);
 CREATE INDEX IF NOT EXISTS idx_clicks_suffix  ON clicks(link_id, suffix);
 CREATE INDEX IF NOT EXISTS idx_clicks_variant ON clicks(link_id, variant);
+CREATE INDEX IF NOT EXISTS idx_clicks_visitor ON clicks(link_id, visitor_hash);

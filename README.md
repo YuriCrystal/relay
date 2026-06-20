@@ -56,6 +56,9 @@ Runs on your own Cloudflare free tier (100k redirects/day is plenty), no cap on 
 - **UTM builder**, **QR code**
 - **Analytics** — device / OS / referrer / country / hour / suffix / A-B variant
 - **No link cap, custom domain, data 100% in your own hands**
+- **Unique visitors** — total clicks plus a privacy-preserving daily unique count (IP / UA never stored)
+- **CSV / JSON export** — download your raw click data any time
+- **Optional edge cache & auto-retention** — KV-cached redirects for scale; Cron-pruned old clicks
 
 ---
 
@@ -132,6 +135,7 @@ wrangler deploy
 | PATCH | `/api/links/:id` | update |
 | DELETE | `/api/links/:id` | delete (along with its click records) |
 | GET | `/api/stats/:id?days=30` | trend + device/OS/country/referrer/suffix/variant/hour |
+| GET | `/api/export?format=csv\|json&id=&days=` | export clicks (CSV or JSON; optional `id` / `days` filters) |
 
 **Public redirect**: `GET /:slug` or `GET /:slug/:suffix` (suffix tracks the source, e.g. `/spring/ig`).
 
@@ -172,6 +176,19 @@ Relay is built to be privacy-friendly by default — it tracks link clicks, not 
 - **Your data, your server.** Everything lives in your own Cloudflare D1; nobody else can read it.
 
 > Marketing pixels (FB / GA4 / GTM) are opt-in per link — only links you attach a pixel to load one, and only for real human visitors.
+
+---
+
+## Scaling & upgrading (optional)
+
+- **Edge cache** — bind a KV namespace as `LINKS_KV` (see `wrangler.toml.example`) and redirects read from KV first, cutting D1 reads and latency at scale. Edits still take effect within `CACHE_TTL` (default 60s). Not bound = always read D1 (instant, current behavior).
+- **Auto-retention** — set `RETENTION_DAYS` and enable the `[triggers]` cron; clicks older than N days are pruned daily. Unset = keep forever.
+
+> **Upgrading from an earlier version?** The unique-visitor feature adds a column — run this once against your D1:
+> ```sql
+> ALTER TABLE clicks ADD COLUMN visitor_hash TEXT DEFAULT '';
+> ```
+> Fresh installs already include it via `schema.sql`. Without it, click recording fails silently until the column is added.
 
 ---
 

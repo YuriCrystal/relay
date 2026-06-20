@@ -2563,7 +2563,8 @@ const demo = (()=>{
       const totalClicks = links.reduce((s,l)=>s+l.clicks,0);
       return Promise.resolve({ totals:{
           links:links.length, active:links.filter(l=>l.active).length,
-          clicks:totalClicks, today:Math.round(totalClicks*0.04) },
+          clicks:totalClicks, today:Math.round(totalClicks*0.04),
+          unique:Math.round(totalClicks*0.72), uniqueToday:Math.round(totalClicks*0.028) },
         series: series('__overview__',14),
         top: [...links].sort((a,b)=>b.clicks-a.clicks).slice(0,5)
               .map(l=>({id:l.id,slug:l.slug,title:l.title,clicks:l.clicks})) });
@@ -2588,7 +2589,7 @@ const demo = (()=>{
         variant: l.mode==='ab'? (l.variants||[]).map((v,i)=>({k:v.label||('變體'+i),n:80+hash(s+i)%200}))
                  : l.mode==='device'? brk(s+'v',['ios','android','default']) : [{k:'default',n:l.clicks}],
         hour: Array.from({length:24},(_,h)=>({k:h,n:Math.round(2+ (Math.sin(h/3)+1)*8 + hash(s+h)%6)})) };
-      return Promise.resolve({ link:clone(l), total:l.clicks, series:series(s,days), breakdown:bd });
+      return Promise.resolve({ link:clone(l), total:l.clicks, unique:Math.round(l.clicks*0.72), series:series(s,days), breakdown:bd });
     },
   };
   function apply(l,b){
@@ -2686,7 +2687,7 @@ async function renderOverview(v){
   v.innerHTML += `
     <div class="grid4">
       ${stat('連結總數',t.links)}${stat('啟用中',t.active)}
-      ${stat('累計點擊',t.clicks)}${stat('今日點擊',t.today)}
+      ${stat('累計點擊',t.clicks, t.unique!=null?t.unique+' 不重複':'')}${stat('今日點擊',t.today, t.uniqueToday!=null?t.uniqueToday+' 不重複':'')}
     </div>
     <div class="row2">
       <div class="card"><p class="sect-t">點擊趨勢</p>${lineChart(d.series)}</div>
@@ -2696,12 +2697,12 @@ async function renderOverview(v){
       </div>
     </div>`;
 }
-function stat(k,v){ return `<div class="card stat"><div class="k">${k}</div><div class="v">${v}</div></div>`; }
+function stat(k,v,sub){ return `<div class="card stat"><div class="k">${k}</div><div class="v">${v}</div>${sub?`<div class="sub" style="font-size:12px;color:#8c8678;margin-top:3px">${sub}</div>`:''}</div>`; }
 
 /* ── 連結列表 ── */
 async function renderLinks(v){
   v.innerHTML = head('連結','管理你所有短網址',
-    `<button class="btn seal" onclick="openForm()">＋ 新增連結</button>`);
+    `<button class="btn ghost" onclick="exportClicks()">⤓ 匯出 CSV</button><button class="btn seal" onclick="openForm()">＋ 新增連結</button>`);
   const d = await api.list();
   state.links = d.links;
   if(!d.links.length){ v.innerHTML += `<div class="card"><div class="empty">還沒有任何連結，按右上角新增一個吧。</div></div>`; return; }
@@ -2729,6 +2730,19 @@ async function delLink(id,slug){
   try{ await api.del(id); toast('已刪除 /'+slug); renderLinks($('#view')); }
   catch(e){ toast('刪除失敗：'+e.message); }
 }
+async function exportClicks(id){
+  if(state.demo){ toast('連線真機後才能匯出資料'); return; }
+  try{
+    const u=state.base.replace(/\/$/,'')+'/api/export?format=csv'+(id?('&id='+id):'');
+    const res=await fetch(u,{ headers:{ Authorization:'Bearer '+state.token } });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(await res.blob());
+    a.download='relay-clicks'+(id?('-'+id):'')+'.csv';
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+    toast('已匯出 CSV');
+  }catch(e){ toast('匯出失敗：'+e.message); }
+}
 
 /* ── 數據詳情 ── */
 async function openStats(id, days=30){
@@ -2737,7 +2751,7 @@ async function openStats(id, days=30){
   const l=d.link;
   const seg=[7,30,90].map(n=>`<button class="${n===days?'on':''}" onclick="openStats(${id},${n})">${n} 天</button>`).join('');
   v.innerHTML = head('/'+esc(l.slug), esc(l.title||'連結數據'),
-    `<button class="btn ghost" onclick="setView('links')">← 返回</button>`);
+    `<button class="btn ghost" onclick="exportClicks(${id})">⤓ 匯出</button><button class="btn ghost" onclick="setView('links')">← 返回</button>`);
   v.innerHTML += `
     <div class="row2" style="margin-bottom:18px">
       <div class="card">
@@ -2751,6 +2765,7 @@ async function openStats(id, days=30){
           <button class="copy" onclick="copy('${esc(shortUrl(l.slug))}')">複製</button></div>
         <div class="preview"><img class="qr" src="${qr(shortUrl(l.slug))}" alt="QR">
           <div><div class="kv"><span class="k">總點擊</span><b>${d.total}</b></div>
+          ${d.unique!=null?`<div class="kv"><span class="k">不重複</span><b>${d.unique}</b></div>`:''}
           <div class="kv"><span class="k">模式</span><span>${modeLabel(l.mode)}</span></div>
           <div class="kv"><span class="k">轉址</span><span>${l.redirect_type}</span></div>
           <div class="kv"><span class="k">像素</span><span>${[l.pixel_fb&&'FB',l.pixel_ga&&'GA4',l.pixel_gtm&&'GTM'].filter(Boolean).join(' ')||'—'}</span></div>

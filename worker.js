@@ -40,6 +40,11 @@ export default {
     // 轉址：/:slug 或 /:slug/:suffix
     return handleRedirect(request, env, ctx, url, parts);
   },
+
+  // 排程：依 RETENTION_DAYS 清理舊點擊（需在 wrangler.toml 設 [triggers] crons）
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(pruneOld(env));
+  },
 };
 
 /* ───────────────────────── 轉址引擎 ───────────────────────── */
@@ -49,9 +54,7 @@ async function handleRedirect(request, env, ctx, url, parts) {
   const suffix = parts[1] || '';
   if (RESERVED.has(slug)) return notFound();
 
-  const link = await env.DB.prepare(
-    'SELECT * FROM links WHERE slug = ?'
-  ).bind(slug).first();
+  const link = await lookupLink(env, slug);
 
   if (!link || !link.active) return notFound();
 
@@ -84,7 +87,7 @@ async function handleRedirect(request, env, ctx, url, parts) {
   // 記點擊（非阻塞）
   if (!skipTracking) {
     ctx.waitUntil(
-      recordClick(env, link, { slug, suffix, variant: picked.variant, request, agent })
+      recordClick(env, link, { slug, suffix, variant: picked.variant, request, agent, ua })
     );
   }
 
@@ -138,28 +141,33 @@ function applyUtm(target, utmJson) {
   }
 }
 
-async function recordClick(env, link, { slug, suffix, variant, request, agent }) {
+async function recordClick(env, link, { slug, suffix, variant, request, agent, ua }) {
   const now = new Date();
   const iso = now.toISOString();
+  const day = localDay(env, now.getTime());
   const country =
     (request.cf && request.cf.country) ||
     request.headers.get('cf-ipcountry') ||
     'XX';
-  // 隱私：referrer 只留來源網域，不存完整網址（避免路徑/查詢字串中的 PII）；原始 UA 不存（device/os/browser 已抽出）
+  // 隱私：referrer 只留來源網域，不存完整網址；原始 UA 與 IP 都不存
   const referrer = refHost(request.headers.get('referer'));
+  // 不重複訪客：每日輪替（含當天日期）+ 站台秘密 的雜湊，只拿來去重；IP/UA 只參與運算、不落地
+  const ip = request.headers.get('cf-connecting-ip') || '';
+  const saltBase = (env && (env.SALT || env.ADMIN_TOKEN)) || 'relay';
+  const visitor = (await sha256(saltBase + '|' + slug + '|' + day + '|' + ip + '|' + ua)).slice(0, 16);
   try {
     await env.DB.prepare(
       `INSERT INTO clicks
-         (link_id, slug, suffix, variant, ts, ts_day, ts_hour, country, device, os, browser, referrer)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+         (link_id, slug, suffix, variant, ts, ts_day, ts_hour, country, device, os, browser, referrer, visitor_hash)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(
       link.id, slug, suffix.slice(0, 64), variant, iso,
-      localDay(env, now.getTime()), localHour(env, now.getTime()),
+      day, localHour(env, now.getTime()),
       country, agent.device, agent.os, agent.browser,
-      referrer.slice(0, 120)
+      referrer.slice(0, 120), visitor
     ).run();
   } catch (e) {
-    // 記錄失敗不可影響轉址
+    // 記錄失敗不可影響轉址（含舊 DB 未加 visitor_hash 欄時）
     console.error('recordClick failed', e);
   }
 }
@@ -204,6 +212,11 @@ async function handleApi(request, env, url, seg) {
       if (request.method === 'GET') return json(await apiStats(env, id, range), 200, cors);
     }
 
+    // /api/export?format=csv|json&id=&days=
+    if (seg[0] === 'export' && request.method === 'GET') {
+      return await apiExport(env, url, cors);
+    }
+
     return json({ error: 'not found' }, 404, cors);
   } catch (e) {
     return json({ error: String(e && e.message || e) }, 400, cors);
@@ -218,6 +231,8 @@ async function apiOverview(env) {
   const todayClicks = await env.DB.prepare(
     'SELECT COUNT(*) AS n FROM clicks WHERE ts_day = ?'
   ).bind(today).first();
+  const uniq = await uniqueCount(env);
+  const uniqToday = await uniqueCount(env, 'ts_day = ?', [today]);
   // 近 14 天趨勢
   const series = await env.DB.prepare(
     `SELECT ts_day AS day, COUNT(*) AS n FROM clicks
@@ -232,6 +247,7 @@ async function apiOverview(env) {
     totals: {
       links: links.n, active: active.n,
       clicks: clicks.n, today: todayClicks.n,
+      unique: uniq, uniqueToday: uniqToday,
     },
     series: series.results || [],
     top: top.results || [],
@@ -302,12 +318,16 @@ async function apiUpdate(env, id, body) {
     f.password_hash, f.pixel_fb, f.pixel_ga, f.pixel_gtm, f.utm_json,
     f.expires_at, active, now, id
   ).run();
+  await invalidate(env, link.slug);
+  if (slug !== link.slug) await invalidate(env, slug);
   return { id, slug };
 }
 
 async function apiDelete(env, id) {
+  const row = await env.DB.prepare('SELECT slug FROM links WHERE id = ?').bind(id).first();
   await env.DB.prepare('DELETE FROM clicks WHERE link_id = ?').bind(id).run();
   await env.DB.prepare('DELETE FROM links WHERE id = ?').bind(id).run();
+  if (row) await invalidate(env, row.slug);
   return { ok: true };
 }
 
@@ -339,10 +359,12 @@ async function apiStats(env, id, days) {
   const total = await env.DB.prepare(
     'SELECT COUNT(*) AS n FROM clicks WHERE link_id = ?'
   ).bind(id).first();
+  const uniq = await uniqueCount(env, 'link_id = ?', [id]);
 
   return {
     link: shapeLink(link),
     total: total.n,
+    unique: uniq,
     series: series.results || [],
     breakdown: {
       device: device.results || [],
@@ -616,6 +638,77 @@ async function safeBrowsingBad(urls, env) {
     for (const m of (data.matches || [])) if (m.threat && m.threat.url) bad.add(m.threat.url);
     return bad;
   } catch { return new Set(); }
+}
+
+/* ───────────────────────── 快取 / 匯出 / 清理 ───────────────────────── */
+
+// 轉址查詢：綁了 LINKS_KV 就先讀 KV 快取（短 TTL），miss 再讀 D1 並回填；沒綁＝直接讀 D1
+async function lookupLink(env, slug) {
+  if (env.LINKS_KV) {
+    const cached = await env.LINKS_KV.get('link:' + slug, 'json');
+    if (cached) return cached;
+    const row = await env.DB.prepare('SELECT * FROM links WHERE slug = ?').bind(slug).first();
+    if (row) {
+      const ttl = Math.max(60, Number(env.CACHE_TTL) || 60); // KV expirationTtl 最小 60 秒
+      await env.LINKS_KV.put('link:' + slug, JSON.stringify(row), { expirationTtl: ttl });
+    }
+    return row || null;
+  }
+  return env.DB.prepare('SELECT * FROM links WHERE slug = ?').bind(slug).first();
+}
+
+// 連結變動時清掉 KV 快取，讓改動快點生效（沒綁 KV 就是 no-op）
+async function invalidate(env, slug) {
+  if (env.LINKS_KV && slug) {
+    try { await env.LINKS_KV.delete('link:' + slug); } catch (e) { /* 失敗無妨，TTL 也會到期 */ }
+  }
+}
+
+// 不重複點擊：COUNT(DISTINCT visitor_hash)；舊 DB 無此欄會丟例外 → 回 null（前端就不顯示）
+async function uniqueCount(env, where, binds) {
+  try {
+    const sql = "SELECT COUNT(DISTINCT visitor_hash) AS n FROM clicks WHERE visitor_hash <> ''" +
+      (where ? ' AND ' + where : '');
+    const r = await env.DB.prepare(sql).bind(...(binds || [])).first();
+    return r.n;
+  } catch { return null; }
+}
+
+// 匯出點擊（CSV / JSON），需 Bearer。?id=<link_id> 篩單一連結、?days=N 篩天數
+async function apiExport(env, url, cors) {
+  const conds = [], binds = [];
+  const id = url.searchParams.get('id');
+  const days = Number(url.searchParams.get('days'));
+  if (id) { conds.push('link_id = ?'); binds.push(Number(id)); }
+  if (Number.isFinite(days) && days > 0) { conds.push('ts_day >= ?'); binds.push(daysAgo(env, days - 1)); }
+  const where = conds.length ? 'WHERE ' + conds.join(' AND ') : '';
+  const cols = ['ts', 'slug', 'suffix', 'variant', 'country', 'device', 'os', 'browser', 'referrer'];
+  const rows = (await env.DB.prepare(
+    `SELECT ${cols.join(', ')} FROM clicks ${where} ORDER BY ts DESC LIMIT 100000`
+  ).bind(...binds).all()).results || [];
+
+  if ((url.searchParams.get('format') || 'csv').toLowerCase() === 'json') {
+    return new Response(JSON.stringify(rows), {
+      headers: { ...cors, 'content-type': 'application/json; charset=utf-8',
+        'content-disposition': 'attachment; filename="relay-clicks.json"' },
+    });
+  }
+  const esc = (v) => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const lines = [cols.join(',')];
+  for (const r of rows) lines.push(cols.map((c) => esc(r[c])).join(','));
+  return new Response('\uFEFF' + lines.join('\n'), { // BOM 讓 Excel 正確認 UTF-8
+    headers: { ...cors, 'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': 'attachment; filename="relay-clicks.csv"' },
+  });
+}
+
+// 排程清理：刪掉超過 RETENTION_DAYS 天的點擊（未設或 ≤0 ＝永久保留）
+async function pruneOld(env) {
+  const days = Number(env.RETENTION_DAYS);
+  if (!Number.isFinite(days) || days <= 0) return;
+  const cutoff = daysAgo(env, days);
+  try { await env.DB.prepare('DELETE FROM clicks WHERE ts_day < ?').bind(cutoff).run(); }
+  catch (e) { console.error('prune failed', e); }
 }
 
 function escapeAttr(s) {
