@@ -1,0 +1,48 @@
+name = "relay"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+
+# ── D1 資料庫綁定 ──────────────────────────────────────────────
+# 用「Deploy to Cloudflare」按鈕或 `wrangler deploy` 部署時，沒填 database_id 會自動建立一個。
+# 手動 CLI：先 `wrangler d1 create relay`，把回傳的 id 解開下面那行貼上。
+[[d1_databases]]
+binding = "DB"
+database_name = "relay"
+# database_id = "<your-d1-database-id>"
+
+# ── 非機密變數 ─────────────────────────────────────────────────
+[vars]
+# 後台網域；留 "*" 放行所有來源（API 仍需 Bearer token）。上線後建議改成你的後台網址。
+DASH_ORIGIN = "*"
+# 後台統計時區偏移（小時）。台灣 +8；其他地區改成你的時區（例：美西 -8、UTC 0）。
+TZ_OFFSET = "8"
+# 目的地網域黑名單（逗號分隔，含子網域）。留空＝不啟用。例："bit.ly,grabify.link"
+BLOCKLIST = ""
+# 尊重 Do-Not-Track / Global-Privacy-Control：設 "1" 後送 DNT/GPC 的訪客不被記錄。留空＝照常記錄。
+RESPECT_DNT = ""
+# 點擊保留天數（搭配下面 [triggers] 排程，自動刪超過 N 天的點擊）。留空＝永久保留。
+RETENTION_DAYS = ""
+# 轉址邊緣快取 TTL 秒數（只有綁了 LINKS_KV 才有用，最小 60）。
+# CACHE_TTL = "60"
+
+# ── 機密（用 wrangler secret 設定，勿寫在這裡）──────────────────
+#   wrangler secret put ADMIN_TOKEN          ← 必填，後台登入金鑰
+#   wrangler secret put SAFEBROWSING_KEY     ← 選用，Google Safe Browsing 惡意網址檢查
+#   wrangler secret put SALT                 ← 選用，不重複訪客雜湊鹽（不設＝用 ADMIN_TOKEN）
+
+# ── 轉址邊緣快取（選用）───────────────────────────────────────
+# wrangler kv namespace create LINKS_KV，把回傳 id 填進來、解開下面三行：
+# [[kv_namespaces]]
+# binding = "LINKS_KV"
+# id = "<your-kv-namespace-id>"
+
+# ── 自動清理舊點擊（選用）─────────────────────────────────────
+# 設好上面 RETENTION_DAYS，再解開下面兩行，每天 03:00 UTC 自動刪超過 N 天的點擊：
+# [triggers]
+# crons = ["0 3 * * *"]
+
+# ── 自訂短網域（選用）─────────────────────────────────────────
+# 在 Cloudflare 加好網域後解開：
+# [[routes]]
+# pattern = "relay.to/*"
+# custom_domain = true

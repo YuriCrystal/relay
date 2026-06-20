@@ -3,6 +3,7 @@
 **English** · [繁體中文](README.zh-TW.md)
 
 [![CI](https://github.com/YuriCrystal/relay/actions/workflows/ci.yml/badge.svg)](https://github.com/YuriCrystal/relay/actions/workflows/ci.yml)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/YuriCrystal/relay)
 
 A link shortener you fully own, running on the Cloudflare edge.
 A **single Worker** is both the redirect engine and the admin API, data lives in **D1**, and the admin dashboard is a **single `index.html`** (zero build, zero external dependencies).
@@ -70,14 +71,18 @@ Runs on your own Cloudflare free tier (100k redirects/day is plenty), no cap on 
 relay/
 ├─ worker.js       redirect engine + admin API (deploys to Cloudflare Workers)
 ├─ schema.sql      D1 tables
-├─ wrangler.toml   Worker config (yours, holds database_id; not committed)
+├─ wrangler.toml   Worker config (committed; D1 auto-provisions, secrets stay out)
 ├─ index.html      single-file admin (drop on Cloudflare Pages, or open locally)
 └─ README.md
 ```
 
 ---
 
-## Deploy (~10 minutes)
+## Deploy
+
+**One-click:** click the **Deploy to Cloudflare** button above — it forks the repo, provisions D1 (and KV if you enable it), and deploys. Then run the two commands below to load the schema and set your `ADMIN_TOKEN`.
+
+**Or step by step (~10 minutes):**
 
 ### 0. Prerequisites
 ```bash
@@ -87,11 +92,8 @@ wrangler login
 
 ### 1. Create D1 and import the schema
 ```bash
-# Copy the config template to a real file (your own wrangler.toml is never committed)
-cp wrangler.toml.example wrangler.toml
-
 wrangler d1 create relay
-# Paste the returned database_id into wrangler.toml
+# Paste the returned database_id into wrangler.toml (uncomment the database_id line)
 
 wrangler d1 execute relay --remote --file=./schema.sql        # cloud
 # wrangler d1 execute relay --local  --file=./schema.sql       # local testing
@@ -183,7 +185,7 @@ Relay is built to be privacy-friendly by default — it tracks link clicks, not 
 
 ## Scaling & upgrading (optional)
 
-- **Edge cache** — bind a KV namespace as `LINKS_KV` (see `wrangler.toml.example`) and redirects read from KV first, cutting D1 reads and latency at scale. Edits still take effect within `CACHE_TTL` (default 60s). Not bound = always read D1 (instant, current behavior).
+- **Edge cache** — bind a KV namespace as `LINKS_KV` (see `wrangler.toml`) and redirects read from KV first, cutting D1 reads and latency at scale. Edits still take effect within `CACHE_TTL` (default 60s). Not bound = always read D1 (instant, current behavior).
 - **Auto-retention** — set `RETENTION_DAYS` and enable the `[triggers]` cron; clicks older than N days are pruned daily. Unset = keep forever.
 
 > **Upgrading from an earlier version?** The unique-visitor feature adds a column — run this once against your D1:
