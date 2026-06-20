@@ -23,6 +23,10 @@ TZ_OFFSET = "8"
 # 留空＝不啟用。例：BLOCKLIST = "bit.ly,grabify.link,iplogger.org"
 BLOCKLIST = ""
 
+# （選用）尊重 Do-Not-Track / Global-Privacy-Control：設 "1" 後，送出 DNT/GPC 的訪客
+# 會被轉址但不記錄點擊。留空＝照常記錄。
+RESPECT_DNT = ""
+
 # ── 機密（勿寫在這裡）──────────────────────────────────────────
 # ADMIN_TOKEN 用指令設定，不要進版控：
 #   wrangler secret put ADMIN_TOKEN

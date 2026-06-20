@@ -39,8 +39,7 @@ CREATE TABLE IF NOT EXISTS clicks (
   device    TEXT    DEFAULT 'unknown', -- mobile | tablet | desktop
   os        TEXT    DEFAULT 'unknown',
   browser   TEXT    DEFAULT 'unknown',
-  referrer  TEXT    DEFAULT '',
-  ua        TEXT    DEFAULT '',
+  referrer  TEXT    DEFAULT '',   -- 只存來源網域（隱私），不存完整網址；原始 UA 不存
   FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
 );
 

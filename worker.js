@@ -78,14 +78,19 @@ async function handleRedirect(request, env, ctx, url, parts) {
 
   let target = applyUtm(picked.url, link.utm_json);
 
-  // 記點擊（非阻塞）
-  ctx.waitUntil(
-    recordClick(env, link, { slug, suffix, variant: picked.variant, request, agent, ua })
-  );
+  // 機器人（連結預覽爬蟲）或選擇退出追蹤者：照常轉址，但不記點擊、不觸發像素
+  const skipTracking = isBot(ua) || optedOut(request, env);
 
-  // 有像素 → 走中介頁先觸發再導向；否則直接 301/302
+  // 記點擊（非阻塞）
+  if (!skipTracking) {
+    ctx.waitUntil(
+      recordClick(env, link, { slug, suffix, variant: picked.variant, request, agent })
+    );
+  }
+
+  // 有像素 → 走中介頁先觸發再導向（機器人不觸發）；否則直接 301/302
   const hasPixel = link.pixel_fb || link.pixel_ga || link.pixel_gtm;
-  if (hasPixel) {
+  if (hasPixel && !skipTracking) {
     return htmlResponse(pageInterstitial(link, target), 200);
   }
   return Response.redirect(target, link.redirect_type === 301 ? 301 : 302);
@@ -133,24 +138,25 @@ function applyUtm(target, utmJson) {
   }
 }
 
-async function recordClick(env, link, { slug, suffix, variant, request, agent, ua }) {
+async function recordClick(env, link, { slug, suffix, variant, request, agent }) {
   const now = new Date();
   const iso = now.toISOString();
   const country =
     (request.cf && request.cf.country) ||
     request.headers.get('cf-ipcountry') ||
     'XX';
-  const referrer = request.headers.get('referer') || '';
+  // 隱私：referrer 只留來源網域，不存完整網址（避免路徑/查詢字串中的 PII）；原始 UA 不存（device/os/browser 已抽出）
+  const referrer = refHost(request.headers.get('referer'));
   try {
     await env.DB.prepare(
       `INSERT INTO clicks
-         (link_id, slug, suffix, variant, ts, ts_day, ts_hour, country, device, os, browser, referrer, ua)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+         (link_id, slug, suffix, variant, ts, ts_day, ts_hour, country, device, os, browser, referrer)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(
       link.id, slug, suffix.slice(0, 64), variant, iso,
       localDay(env, now.getTime()), localHour(env, now.getTime()),
       country, agent.device, agent.os, agent.browser,
-      referrer.slice(0, 300), ua.slice(0, 400)
+      referrer.slice(0, 120)
     ).run();
   } catch (e) {
     // 記錄失敗不可影響轉址
@@ -506,6 +512,23 @@ function parseUA(ua) {
   else if (/firefox|fxios/.test(u)) browser = 'Firefox';
   else if (/safari/.test(u)) browser = 'Safari';
   return { os, device, browser };
+}
+
+// 已知連結預覽爬蟲 / 抓取器 / 監測工具：用具名 token，避免誤判 App 內建瀏覽器的真人點擊
+function isBot(ua) {
+  return /crawl|spider|slurp|bot\/|facebookexternalhit|facebot|embedly|quora|skypeuripreview|whatsapp\/|telegrambot|slackbot|discordbot|twitterbot|linkedinbot|pinterest\/|redditbot|applebot|googlebot|bingbot|yandexbot|baiduspider|duckduckbot|petalbot|bytespider|semrush|ahrefs|mj12bot|dotbot|curl\/|wget|python-requests|go-http-client|headlesschrome|phantomjs|lighthouse|pingdom|uptimerobot/i.test(ua);
+}
+
+// referrer 只取來源網域，丟掉路徑/查詢字串（隱私 + 統計更乾淨）
+function refHost(ref) {
+  if (!ref) return '';
+  try { return new URL(ref).hostname; } catch { return ''; }
+}
+
+// 選用：設了 RESPECT_DNT 才生效，尊重 Do-Not-Track / Global-Privacy-Control
+function optedOut(request, env) {
+  if (!env || !env.RESPECT_DNT) return false;
+  return request.headers.get('dnt') === '1' || request.headers.get('sec-gpc') === '1';
 }
 
 async function sha256(str) {

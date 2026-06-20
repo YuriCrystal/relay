@@ -159,6 +159,22 @@ wrangler deploy
 
 ---
 
+## Privacy
+
+Relay is built to be privacy-friendly by default — it tracks link clicks, not people:
+
+- **No cookies, no tracking script.** Clicks are counted server-side at redirect time; nothing runs in the visitor's browser and no cross-site identifier is set.
+- **No IP stored.** Only a coarse country code (from Cloudflare's edge) is kept — never the raw IP address.
+- **No raw User-Agent stored.** Only the derived device / OS / browser is kept; the full UA string (a fingerprinting vector) is discarded.
+- **Referrer reduced to its domain.** Only the source host (e.g. `google.com`) is stored — never the full URL with its path or query string.
+- **Bots excluded.** Link-preview crawlers (Facebook, Slack, Discord, Telegram, etc.) are still redirected so previews work, but aren't counted and don't fire your pixels — so your numbers are real human clicks.
+- **Honors opt-out (optional).** Set `RESPECT_DNT = "1"` and visitors sending `DNT` / `Sec-GPC` are redirected without being recorded.
+- **Your data, your server.** Everything lives in your own Cloudflare D1; nobody else can read it.
+
+> Marketing pixels (FB / GA4 / GTM) are opt-in per link — only links you attach a pixel to load one, and only for real human visitors.
+
+---
+
 ## Cost
 
 **Fully self-hosted, running on your own Cloudflare account** — there's no central server, and the author doesn't pay for anyone. For most people it's **$0**:
