@@ -2,6 +2,8 @@
 
 **English** · [繁體中文](README.zh-TW.md)
 
+[![CI](https://github.com/YuriCrystal/relay/actions/workflows/ci.yml/badge.svg)](https://github.com/YuriCrystal/relay/actions/workflows/ci.yml)
+
 A link shortener you fully own, running on the Cloudflare edge.
 A **single Worker** is both the redirect engine and the admin API, data lives in **D1**, and the admin dashboard is a **single `index.html`** (zero build, zero external dependencies).
 
@@ -201,6 +203,18 @@ Relay is built to be privacy-friendly by default — it tracks link clicks, not 
 - Pages (hosts the `index.html` admin): free
 
 You only pay past the free tier, and you pay **your own** Cloudflare bill — nothing to do with the author or other users. Fork it, fill in your own `database_id` and `ADMIN_TOKEN`, and it's 100% yours.
+
+---
+
+## Development
+
+Pure `node:test` unit tests cover the redirect / privacy / parsing helpers — zero dependencies:
+
+```bash
+node --test
+```
+
+CI runs them on every push and PR (`.github/workflows/ci.yml`).
 
 ---
 

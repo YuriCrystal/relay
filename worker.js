@@ -749,3 +749,10 @@ function notFound() {
     404
   );
 }
+
+// 給單元測試用的具名匯出（Cloudflare 只用 default export，這些純函式不影響部署）
+export {
+  isBot, refHost, normSlug, hostOf, blocklistedHost, assertHttp,
+  applyUtm, pickTarget, parseUA, safeParse, sha256,
+  tzOffsetHours, localDay, localHour,
+};
