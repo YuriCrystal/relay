@@ -59,6 +59,7 @@ Runs on your own Cloudflare free tier (100k redirects/day is plenty), no cap on 
 - **UTM builder**, **QR code**
 - **Analytics** — device / OS / referrer / country / hour / suffix / A-B variant
 - **No link cap, custom domain, data 100% in your own hands**
+- **Cookieless conversion tracking** — attribute signups/sales to links and channels via a `/track` postback, zero cookies
 - **Unique visitors** — total clicks plus a privacy-preserving daily unique count (IP / UA never stored)
 - **CSV / JSON export** — download your raw click data any time
 - **Optional edge cache & auto-retention** — KV-cached redirects for scale; Cron-pruned old clicks
@@ -167,6 +168,24 @@ wrangler deploy
 
 ---
 
+## Conversion tracking (cookieless)
+
+Relay attributes conversions to links **without a single cookie**. When someone completes an action on your destination (signup, purchase…), your site reports it back — server-to-server, aggregate, no cross-site identity:
+
+```bash
+curl -X POST https://<your-relay>/track \
+  -H 'content-type: application/json' \
+  -d '{"slug":"spring","suffix":"ig","event":"signup"}'
+```
+
+Fields: `slug` (required), `suffix` (the channel/KOL tag), `variant`, `event` (e.g. `signup`/`purchase`), `value` (optional number). A `GET /track?slug=…` with query params also works (for `navigator.sendBeacon` / pixels).
+
+The dashboard then shows **conversions, conversion rate, and a clicks→conversions table per channel** — so you see which `/suffix` actually *converts*, not just which gets traffic. That's the thing cookie-based tools can't do privacy-first.
+
+**Abuse protection (optional):** set a `CONVERSION_TOKEN` secret (`wrangler secret put CONVERSION_TOKEN`) and send it as the `X-Conversion-Token` header (or `token` field) — recommended for server-side postbacks. Unset = open beacon (fine for trusted/internal use).
+
+---
+
 ## Privacy
 
 Relay is built to be privacy-friendly by default — it tracks link clicks, not people:
@@ -188,7 +207,7 @@ Relay is built to be privacy-friendly by default — it tracks link clicks, not 
 - **Edge cache** — bind a KV namespace as `LINKS_KV` (see `wrangler.toml`) and redirects read from KV first, cutting D1 reads and latency at scale. Edits still take effect within `CACHE_TTL` (default 60s). Not bound = always read D1 (instant, current behavior).
 - **Auto-retention** — set `RETENTION_DAYS` and enable the `[triggers]` cron; clicks older than N days are pruned daily. Unset = keep forever.
 
-> **Upgrading from an earlier version?** The unique-visitor feature adds a column — run this once against your D1:
+> **Upgrading from an earlier version?** Run this once against your D1, then re-run `schema.sql` to add the new `conversions` table (it uses `CREATE TABLE IF NOT EXISTS`, so it won't touch existing tables):
 > ```sql
 > ALTER TABLE clicks ADD COLUMN visitor_hash TEXT DEFAULT '';
 > ```

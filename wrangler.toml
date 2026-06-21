@@ -29,6 +29,7 @@ RETENTION_DAYS = ""
 #   wrangler secret put ADMIN_TOKEN          ← 必填，後台登入金鑰
 #   wrangler secret put SAFEBROWSING_KEY     ← 選用，Google Safe Browsing 惡意網址檢查
 #   wrangler secret put SALT                 ← 選用，不重複訪客雜湊鹽（不設＝用 ADMIN_TOKEN）
+#   wrangler secret put CONVERSION_TOKEN     ← 選用，/track 轉換回報的驗證 token（不設＝開放回報）
 
 # ── 轉址邊緣快取（選用）───────────────────────────────────────
 # wrangler kv namespace create LINKS_KV，把回傳 id 填進來、解開下面三行：

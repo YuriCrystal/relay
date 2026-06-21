@@ -49,3 +49,18 @@ CREATE INDEX IF NOT EXISTS idx_clicks_day     ON clicks(link_id, ts_day);
 CREATE INDEX IF NOT EXISTS idx_clicks_suffix  ON clicks(link_id, suffix);
 CREATE INDEX IF NOT EXISTS idx_clicks_variant ON clicks(link_id, variant);
 CREATE INDEX IF NOT EXISTS idx_clicks_visitor ON clicks(link_id, visitor_hash);
+
+-- 轉換事件表（cookieless 歸因；落地頁回報「點擊帶來轉換」）------------------
+CREATE TABLE IF NOT EXISTS conversions (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  link_id   INTEGER NOT NULL,
+  slug      TEXT    NOT NULL,
+  suffix    TEXT    DEFAULT '',   -- 對應點擊的 /suffix（KOL/渠道）
+  variant   TEXT    DEFAULT '',
+  event     TEXT    DEFAULT 'conversion',  -- 事件名，如 signup / purchase
+  value     REAL    DEFAULT 0,             -- 選填金額/數值
+  ts        TEXT    NOT NULL,
+  ts_day    TEXT    NOT NULL,
+  FOREIGN KEY (link_id) REFERENCES links(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_conv_link ON conversions(link_id, ts_day);

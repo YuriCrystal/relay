@@ -11,7 +11,7 @@
  *   DASH_ORIGIN  後台網域，給 CORS 用；留空＝放行所有來源（仍需 Bearer）
  */
 
-const RESERVED = new Set(['api', 'favicon.ico', 'robots.txt', '']);
+const RESERVED = new Set(['api', 'favicon.ico', 'robots.txt', 'track', '']);
 
 export default {
   async fetch(request, env, ctx) {
@@ -28,6 +28,11 @@ export default {
     // 後台 API
     if (parts[0] === 'api') {
       return handleApi(request, env, url, parts.slice(1));
+    }
+
+    // 轉換回報（無 cookie 歸因）：POST/GET /track
+    if (parts[0] === 'track') {
+      return handleTrack(request, env, url);
     }
 
     // 根目錄：不洩漏後台，回極簡占位
@@ -172,6 +177,75 @@ async function recordClick(env, link, { slug, suffix, variant, request, agent, u
   }
 }
 
+/* ───────────────────────── 轉換回報（cookieless 歸因）───────────────────────── */
+
+// POST/GET /track ── 落地頁回報「某次點擊帶來轉換」。無 cookie、無跨站身分，純伺服器端聚合。
+async function handleTrack(request, env, url) {
+  const cors = {
+    'access-control-allow-origin': request.headers.get('origin') || '*',
+    'access-control-allow-methods': 'POST,GET,OPTIONS',
+    'access-control-allow-headers': 'content-type,x-conversion-token',
+    'vary': 'origin',
+  };
+  if (request.method === 'OPTIONS') return new Response(null, { headers: cors });
+  if (request.method !== 'POST' && request.method !== 'GET') {
+    return new Response('method not allowed', { status: 405, headers: cors });
+  }
+  // 參數可來自 query 或 body（JSON / form）
+  let p = Object.fromEntries(url.searchParams);
+  if (request.method === 'POST') {
+    try {
+      const ct = request.headers.get('content-type') || '';
+      if (ct.includes('application/json')) p = { ...p, ...(await request.json()) };
+      else { const f = await request.formData(); for (const [k, v] of f) p[k] = v; }
+    } catch { /* 用 query 參數即可 */ }
+  }
+  // 選用：設了 CONVERSION_TOKEN 才驗證（伺服器端回報用，防濫報）
+  if (env.CONVERSION_TOKEN) {
+    const tok = request.headers.get('x-conversion-token') || p.token || '';
+    if (tok !== env.CONVERSION_TOKEN) return new Response('forbidden', { status: 403, headers: cors });
+  }
+  const slug = normSlug(p.slug || '');
+  if (!slug) return new Response('slug required', { status: 400, headers: cors });
+  const link = await lookupLink(env, slug);
+  if (!link) return new Response('unknown slug', { status: 404, headers: cors });
+
+  const now = new Date();
+  try {
+    await env.DB.prepare(
+      `INSERT INTO conversions (link_id, slug, suffix, variant, event, value, ts, ts_day)
+       VALUES (?,?,?,?,?,?,?,?)`
+    ).bind(
+      link.id, slug, String(p.suffix || '').slice(0, 64), String(p.variant || '').slice(0, 64),
+      String(p.event || 'conversion').slice(0, 40), Number(p.value) || 0,
+      now.toISOString(), localDay(env, now.getTime())
+    ).run();
+  } catch (e) {
+    // 表不存在（舊 DB 未 migrate）或寫入失敗：記 log，仍回 204 不讓對方端噴錯
+    console.error('recordConversion failed', e);
+  }
+  return new Response(null, { status: 204, headers: cors });
+}
+
+// 轉換統計（舊 DB 無 conversions 表時回零，graceful）
+async function convStats(env, id, since) {
+  try {
+    const tot = await env.DB.prepare(
+      'SELECT COUNT(*) AS n, COALESCE(SUM(value),0) AS v FROM conversions WHERE link_id = ?'
+    ).bind(id).first();
+    const byEvent = await env.DB.prepare(
+      `SELECT event AS k, COUNT(*) AS n FROM conversions WHERE link_id = ? AND ts_day >= ? GROUP BY event ORDER BY n DESC LIMIT 20`
+    ).bind(id, since).all();
+    const bySuffix = await env.DB.prepare(
+      `SELECT CASE WHEN suffix='' THEN '(none)' ELSE suffix END AS k, COUNT(*) AS n
+       FROM conversions WHERE link_id = ? AND ts_day >= ? GROUP BY suffix ORDER BY n DESC LIMIT 20`
+    ).bind(id, since).all();
+    return { total: tot.n, value: tot.v, byEvent: byEvent.results || [], bySuffix: bySuffix.results || [] };
+  } catch {
+    return { total: 0, value: 0, byEvent: [], bySuffix: [] };
+  }
+}
+
 /* ───────────────────────── 後台 API ───────────────────────── */
 
 async function handleApi(request, env, url, seg) {
@@ -233,6 +307,8 @@ async function apiOverview(env) {
   ).bind(today).first();
   const uniq = await uniqueCount(env);
   const uniqToday = await uniqueCount(env, 'ts_day = ?', [today]);
+  let convTotal = null;
+  try { convTotal = (await env.DB.prepare('SELECT COUNT(*) AS n FROM conversions').first()).n; } catch { /* 表不存在 */ }
   // 近 14 天趨勢
   const series = await env.DB.prepare(
     `SELECT ts_day AS day, COUNT(*) AS n FROM clicks
@@ -248,6 +324,7 @@ async function apiOverview(env) {
       links: links.n, active: active.n,
       clicks: clicks.n, today: todayClicks.n,
       unique: uniq, uniqueToday: uniqToday,
+      conversions: convTotal,
     },
     series: series.results || [],
     top: top.results || [],
@@ -326,6 +403,7 @@ async function apiUpdate(env, id, body) {
 async function apiDelete(env, id) {
   const row = await env.DB.prepare('SELECT slug FROM links WHERE id = ?').bind(id).first();
   await env.DB.prepare('DELETE FROM clicks WHERE link_id = ?').bind(id).run();
+  try { await env.DB.prepare('DELETE FROM conversions WHERE link_id = ?').bind(id).run(); } catch { /* 表可能不存在 */ }
   await env.DB.prepare('DELETE FROM links WHERE id = ?').bind(id).run();
   if (row) await invalidate(env, row.slug);
   return { ok: true };
@@ -360,11 +438,13 @@ async function apiStats(env, id, days) {
     'SELECT COUNT(*) AS n FROM clicks WHERE link_id = ?'
   ).bind(id).first();
   const uniq = await uniqueCount(env, 'link_id = ?', [id]);
+  const conv = await convStats(env, id, since);
 
   return {
     link: shapeLink(link),
     total: total.n,
     unique: uniq,
+    conversions: conv,
     series: series.results || [],
     breakdown: {
       device: device.results || [],
@@ -708,8 +788,10 @@ async function pruneOld(env) {
   const days = Number(env.RETENTION_DAYS);
   if (!Number.isFinite(days) || days <= 0) return;
   const cutoff = daysAgo(env, days);
-  try { await env.DB.prepare('DELETE FROM clicks WHERE ts_day < ?').bind(cutoff).run(); }
-  catch (e) { console.error('prune failed', e); }
+  try {
+    await env.DB.prepare('DELETE FROM clicks WHERE ts_day < ?').bind(cutoff).run();
+    await env.DB.prepare('DELETE FROM conversions WHERE ts_day < ?').bind(cutoff).run();
+  } catch (e) { console.error('prune failed', e); }
 }
 
 function escapeAttr(s) {

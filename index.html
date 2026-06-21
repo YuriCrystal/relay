@@ -2564,7 +2564,8 @@ const demo = (()=>{
       return Promise.resolve({ totals:{
           links:links.length, active:links.filter(l=>l.active).length,
           clicks:totalClicks, today:Math.round(totalClicks*0.04),
-          unique:Math.round(totalClicks*0.72), uniqueToday:Math.round(totalClicks*0.028) },
+          unique:Math.round(totalClicks*0.72), uniqueToday:Math.round(totalClicks*0.028),
+          conversions:Math.round(totalClicks*0.05) },
         series: series('__overview__',14),
         top: [...links].sort((a,b)=>b.clicks-a.clicks).slice(0,5)
               .map(l=>({id:l.id,slug:l.slug,title:l.title,clicks:l.clicks})) });
@@ -2586,11 +2587,15 @@ const demo = (()=>{
         browser:brk(s+'b',['Chrome','Safari','Firefox','Edge']),
         country:brk(s+'c',['TW','HK','US','JP','MY']),
         referrer:brk(s+'r',['(direct)','instagram.com','facebook.com','t.co','line.me']),
-        suffix: l.mode==='ab'?[]:brk(s+'k',['ig','threads','fb','(direct)']),
+        suffix: brk(s+'k',['ig','threads','fb','(direct)']),
         variant: l.mode==='ab'? (l.variants||[]).map((v,i)=>({k:v.label||('變體'+i),n:80+hash(s+i)%200}))
                  : l.mode==='device'? brk(s+'v',['ios','android','default']) : [{k:'default',n:l.clicks}],
         hour: Array.from({length:24},(_,h)=>({k:h,n:Math.round(2+ (Math.sin(h/3)+1)*8 + hash(s+h)%6)})) };
-      return Promise.resolve({ link:clone(l), total:l.clicks, unique:Math.round(l.clicks*0.72), series:series(s,days), breakdown:bd });
+      const baseSuffix=(bd.suffix&&bd.suffix.length)?bd.suffix:[{k:'ig',n:120},{k:'fb',n:80},{k:'(none)',n:40}];
+      const convSuffix=baseSuffix.map(x=>({k:x.k,n:Math.round(x.n*0.08)})).filter(x=>x.n>0);
+      const convTot=convSuffix.reduce((a,b)=>a+b.n,0);
+      const conv={ total:convTot, value:0, byEvent:[{k:'signup',n:Math.round(convTot*0.6)},{k:'purchase',n:convTot-Math.round(convTot*0.6)}], bySuffix:convSuffix };
+      return Promise.resolve({ link:clone(l), total:l.clicks, unique:Math.round(l.clicks*0.72), conversions:conv, series:series(s,days), breakdown:bd });
     },
   };
   function apply(l,b){
@@ -2688,7 +2693,7 @@ async function renderOverview(v){
   v.innerHTML += `
     <div class="grid4">
       ${stat('連結總數',t.links)}${stat('啟用中',t.active)}
-      ${stat('累計點擊',t.clicks, t.unique!=null?t.unique+' 不重複':'')}${stat('今日點擊',t.today, t.uniqueToday!=null?t.uniqueToday+' 不重複':'')}
+      ${stat('累計點擊',t.clicks, [t.unique!=null?t.unique+' 不重複':'', t.conversions?t.conversions+' 轉換':''].filter(Boolean).join(' · '))}${stat('今日點擊',t.today, t.uniqueToday!=null?t.uniqueToday+' 不重複':'')}
     </div>
     <div class="row2">
       <div class="card"><p class="sect-t">點擊趨勢</p>${lineChart(d.series)}</div>
@@ -2706,6 +2711,11 @@ function referrerSplit(items){ items=items||[]; const total=items.reduce((s,x)=>
   return `<div style="display:flex;gap:16px;font-size:13px;color:#6b6557;margin-bottom:10px">
     <span>直接流量 <b style="color:#1c1a17">${pct(direct)}%</b></span>
     <span>帶來源 <b style="color:#1c1a17">${pct(total-direct)}%</b></span></div>`; }
+function convTable(clicks,convs){ clicks=clicks||[]; convs=convs||[]; const cmap={}; convs.forEach(c=>{cmap[c.k]=c.n;});
+  const rows=clicks.map(c=>({k:c.k,clicks:c.n,conv:cmap[c.k]||0})); convs.forEach(c=>{ if(!clicks.find(x=>x.k===c.k)) rows.push({k:c.k,clicks:0,conv:c.n}); });
+  if(!rows.length) return '<div class="empty" style="padding:24px">尚無資料</div>';
+  return '<table style="width:100%;font-size:13px;border-collapse:collapse"><thead><tr style="color:#8c8678;text-align:left;border-bottom:1px solid #eee3d8"><th style="padding:4px 0">來源</th><th style="text-align:right">點擊</th><th style="text-align:right">轉換</th><th style="text-align:right">轉換率</th></tr></thead><tbody>'+
+    rows.map(r=>`<tr style="border-bottom:1px solid #f3ece2"><td style="padding:5px 0">${esc(r.k)}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${r.clicks}</td><td style="text-align:right;font-variant-numeric:tabular-nums">${r.conv}</td><td style="text-align:right;font-variant-numeric:tabular-nums;color:#5b7a52">${r.clicks?((r.conv/r.clicks*100).toFixed(1)+'%'):'—'}</td></tr>`).join('')+'</tbody></table>'; }
 
 /* ── 連結列表 ── */
 async function renderLinks(v){
@@ -2774,6 +2784,7 @@ async function openStats(id, days=30){
         <div class="preview"><img class="qr" src="${qr(shortUrl(l.slug))}" alt="QR">
           <div><div class="kv"><span class="k">總點擊</span><b>${d.total}</b></div>
           ${d.unique!=null?`<div class="kv"><span class="k">不重複</span><b>${d.unique}</b></div>`:''}
+          ${d.conversions&&d.conversions.total?`<div class="kv"><span class="k">轉換</span><b>${d.conversions.total}</b></div><div class="kv"><span class="k">轉換率</span><b style="color:#5b7a52">${d.total?((d.conversions.total/d.total*100).toFixed(1)+'%'):'—'}</b></div>`:''}
           <div class="kv"><span class="k">模式</span><span>${modeLabel(l.mode)}</span></div>
           <div class="kv"><span class="k">轉址</span><span>${l.redirect_type}</span></div>
           <div class="kv"><span class="k">像素</span><span>${[l.pixel_fb&&'FB',l.pixel_ga&&'GA4',l.pixel_gtm&&'GTM'].filter(Boolean).join(' ')||'—'}</span></div>
@@ -2793,6 +2804,10 @@ async function openStats(id, days=30){
       <div class="card"><p class="sect-t">國家 / 地區</p>${barList((d.breakdown.country||[]).map(x=>({k:countryName(x.k),n:x.n})))}</div>
       <div class="card"><p class="sect-t">來源網站</p>${referrerSplit(d.breakdown.referrer)}${barList(d.breakdown.referrer)}</div>
     </div>
+    ${d.conversions&&d.conversions.total?`<div class="row2" style="margin-bottom:18px">
+      <div class="card"><p class="sect-t">渠道轉換（點擊 → 轉換）</p>${convTable(d.breakdown.suffix, d.conversions.bySuffix)}</div>
+      <div class="card"><p class="sect-t">轉換事件</p>${barList(d.conversions.byEvent, true)}</div>
+    </div>`:''}
     <div class="card"><p class="sect-t">時段熱度</p>${hourHeat(d.breakdown.hour)}</div>`;
 }
 
