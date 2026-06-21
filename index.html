@@ -2583,6 +2583,7 @@ const demo = (()=>{
       const s=l.slug;
       const bd={ device:brk(s+'d',['mobile','desktop','tablet']),
         os:brk(s+'o',['iOS','Android','Windows','macOS']),
+        browser:brk(s+'b',['Chrome','Safari','Firefox','Edge']),
         country:brk(s+'c',['TW','HK','US','JP','MY']),
         referrer:brk(s+'r',['(direct)','instagram.com','facebook.com','t.co','line.me']),
         suffix: l.mode==='ab'?[]:brk(s+'k',['ig','threads','fb','(direct)']),
@@ -2698,6 +2699,13 @@ async function renderOverview(v){
     </div>`;
 }
 function stat(k,v,sub){ return `<div class="card stat"><div class="k">${k}</div><div class="v">${v}</div>${sub?`<div class="sub" style="font-size:12px;color:#8c8678;margin-top:3px">${sub}</div>`:''}</div>`; }
+const COUNTRY_NAMES={TW:'台灣',HK:'香港',CN:'中國',MO:'澳門',JP:'日本',KR:'南韓',SG:'新加坡',MY:'馬來西亞',TH:'泰國',VN:'越南',ID:'印尼',PH:'菲律賓',IN:'印度',US:'美國',CA:'加拿大',GB:'英國',DE:'德國',FR:'法國',NL:'荷蘭',ES:'西班牙',IT:'義大利',SE:'瑞典',AU:'澳洲',NZ:'紐西蘭',BR:'巴西',MX:'墨西哥',RU:'俄羅斯',AE:'阿聯',XX:'未知'};
+function countryName(code){ return COUNTRY_NAMES[code]? COUNTRY_NAMES[code]+'（'+code+'）' : (code||'—'); }
+function referrerSplit(items){ items=items||[]; const total=items.reduce((s,x)=>s+x.n,0); if(!total) return '';
+  const direct=(items.find(x=>x.k==='(direct)')||{n:0}).n; const pct=n=>(n/total*100).toFixed(0);
+  return `<div style="display:flex;gap:16px;font-size:13px;color:#6b6557;margin-bottom:10px">
+    <span>直接流量 <b style="color:#1c1a17">${pct(direct)}%</b></span>
+    <span>帶來源 <b style="color:#1c1a17">${pct(total-direct)}%</b></span></div>`; }
 
 /* ── 連結列表 ── */
 async function renderLinks(v){
@@ -2779,12 +2787,13 @@ async function openStats(id, days=30){
     </div>
     <div class="row2" style="margin-bottom:18px">
       <div class="card"><p class="sect-t">作業系統</p>${barList(d.breakdown.os)}</div>
-      <div class="card"><p class="sect-t">國家 / 地區</p>${barList(d.breakdown.country)}</div>
+      <div class="card"><p class="sect-t">瀏覽器</p>${barList(d.breakdown.browser)}</div>
     </div>
-    <div class="row2">
-      <div class="card"><p class="sect-t">來源網站</p>${barList(d.breakdown.referrer)}</div>
-      <div class="card"><p class="sect-t">時段熱度</p>${hourHeat(d.breakdown.hour)}</div>
-    </div>`;
+    <div class="row2" style="margin-bottom:18px">
+      <div class="card"><p class="sect-t">國家 / 地區</p>${barList((d.breakdown.country||[]).map(x=>({k:countryName(x.k),n:x.n})))}</div>
+      <div class="card"><p class="sect-t">來源網站</p>${referrerSplit(d.breakdown.referrer)}${barList(d.breakdown.referrer)}</div>
+    </div>
+    <div class="card"><p class="sect-t">時段熱度</p>${hourHeat(d.breakdown.hour)}</div>`;
 }
 
 /* ── 設定 ── */

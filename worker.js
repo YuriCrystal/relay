@@ -341,12 +341,12 @@ async function apiStats(env, id, days) {
      WHERE link_id = ? AND ts_day >= ? GROUP BY ${col} ORDER BY n DESC LIMIT 20`
   ).bind(id, since).all();
 
-  const [series, device, os, country, referrer, suffix, variant, hour] = await Promise.all([
+  const [series, device, os, browser, country, referrer, suffix, variant, hour] = await Promise.all([
     env.DB.prepare(
       `SELECT ts_day AS day, COUNT(*) AS n FROM clicks
        WHERE link_id = ? AND ts_day >= ? GROUP BY ts_day ORDER BY ts_day`
     ).bind(id, since).all(),
-    grp('device'), grp('os'), grp('country'),
+    grp('device'), grp('os'), grp('browser'), grp('country'),
     grp("CASE WHEN referrer='' THEN '(direct)' ELSE referrer END"),
     grp("CASE WHEN suffix='' THEN '(none)' ELSE suffix END"),
     grp("CASE WHEN variant='' THEN 'default' ELSE variant END"),
@@ -369,6 +369,7 @@ async function apiStats(env, id, days) {
     breakdown: {
       device: device.results || [],
       os: os.results || [],
+      browser: browser.results || [],
       country: country.results || [],
       referrer: referrer.results || [],
       suffix: suffix.results || [],   // KOL 成效
