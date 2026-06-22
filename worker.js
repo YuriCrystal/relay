@@ -81,7 +81,8 @@ async function handleRedirect(request, env, ctx, url, parts) {
   // 依模式挑出目的地
   const ua = request.headers.get('user-agent') || '';
   const agent = parseUA(ua);
-  const picked = pickTarget(link, agent);
+  const country = (request.cf && request.cf.country) || request.headers.get('cf-ipcountry') || 'XX';
+  const picked = pickTarget(link, agent, country);
   if (!picked.url) return notFound();
 
   let target = applyUtm(picked.url, link.utm_json);
@@ -104,7 +105,7 @@ async function handleRedirect(request, env, ctx, url, parts) {
   return Response.redirect(target, link.redirect_type === 301 ? 301 : 302);
 }
 
-function pickTarget(link, agent) {
+function pickTarget(link, agent, country) {
   if (link.mode === 'ab') {
     const variants = safeParse(link.variants_json, []);
     const valid = variants.filter((v) => v && v.url);
@@ -122,6 +123,16 @@ function pickTarget(link, agent) {
     const d = safeParse(link.variants_json, {});
     if (agent.os === 'iOS' && d.ios) return { url: d.ios, variant: 'ios' };
     if (agent.os === 'Android' && d.android) return { url: d.android, variant: 'android' };
+    return { url: d.default || link.target_url, variant: 'default' };
+  }
+
+  if (link.mode === 'geo') {
+    const d = safeParse(link.variants_json, {});
+    const cc = String(country || '').toUpperCase();
+    const rules = Array.isArray(d.rules) ? d.rules : [];
+    for (const r of rules) {
+      if (r && r.cc && r.url && String(r.cc).toUpperCase() === cc) return { url: r.url, variant: 'geo:' + cc };
+    }
     return { url: d.default || link.target_url, variant: 'default' };
   }
 
@@ -462,7 +473,7 @@ async function apiStats(env, id, days) {
 /* ───────────────────────── 欄位處理 ───────────────────────── */
 
 async function normFields(body, env) {
-  const mode = ['simple', 'ab', 'device'].includes(body.mode) ? body.mode : 'simple';
+  const mode = ['simple', 'ab', 'device', 'geo'].includes(body.mode) ? body.mode : 'simple';
 
   const target_url = String(body.target_url || '');
 
@@ -485,16 +496,26 @@ async function normFields(body, env) {
     if (dev.android) assertHttp(dev.android, 'Android 目的地');
     if (dev.default) assertHttp(dev.default, '預設目的地');
     variants_json = JSON.stringify(dev);
+  } else if (mode === 'geo') {
+    const d = body.variants && typeof body.variants === 'object' && !Array.isArray(body.variants)
+      ? body.variants : safeParse(body.variants_json, {});
+    const rules = (Array.isArray(d.rules) ? d.rules : [])
+      .filter((r) => r && r.cc && r.url)
+      .map((r) => ({ cc: String(r.cc).toUpperCase().slice(0, 2), url: String(r.url) }));
+    rules.forEach((r) => assertHttp(r.url, '地區 ' + r.cc + ' 目的地'));
+    const def = String(d.default || '');
+    if (def) assertHttp(def, '預設目的地');
+    variants_json = JSON.stringify({ rules, default: def });
   } else if (target_url) {
     assertHttp(target_url, '目的地網址');
   }
 
   // 黑名單 + 選用 Safe Browsing（建立/更新時擋掉惡意或不想要的目的地）
-  const dests = mode === 'ab'
-    ? safeParse(variants_json, []).map((v) => v.url)
-    : mode === 'device'
-      ? ['ios', 'android', 'default'].map((k) => safeParse(variants_json, {})[k]).filter(Boolean)
-      : (target_url ? [target_url] : []);
+  let dests;
+  if (mode === 'ab') dests = safeParse(variants_json, []).map((v) => v.url);
+  else if (mode === 'device') { const d = safeParse(variants_json, {}); dests = [d.ios, d.android, d.default].filter(Boolean); }
+  else if (mode === 'geo') { const g = safeParse(variants_json, {}); dests = [...((g.rules || []).map((r) => r.url)), g.default].filter(Boolean); }
+  else dests = target_url ? [target_url] : [];
   for (const u of dests) {
     const h = hostOf(u);
     if (blocklistedHost(h, env)) throw new Error('目的地網域在黑名單內：' + h);
@@ -538,7 +559,7 @@ function shapeLink(row) {
     target_url: row.target_url || '',
     variants: row.mode === 'ab'
       ? safeParse(row.variants_json, [])
-      : row.mode === 'device' ? safeParse(row.variants_json, {}) : null,
+      : (row.mode === 'device' || row.mode === 'geo') ? safeParse(row.variants_json, {}) : null,
     redirect_type: row.redirect_type,
     has_password: !!row.password_hash,
     pixel_fb: row.pixel_fb || '',

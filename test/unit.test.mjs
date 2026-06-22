@@ -88,6 +88,14 @@ test('pickTarget routes by device and falls back to default/target', () => {
   assert.equal(pickTarget({ mode: 'simple', target_url: 'https://t' }, {}).url, 'https://t');
 });
 
+test('pickTarget routes by country (geo), case-insensitive, falls back to default', () => {
+  const geo = { mode: 'geo', variants_json: JSON.stringify({ rules: [{ cc: 'US', url: 'https://us' }, { cc: 'JP', url: 'https://jp' }], default: 'https://def' }) };
+  assert.deepEqual(pickTarget(geo, {}, 'US'), { url: 'https://us', variant: 'geo:US' });
+  assert.deepEqual(pickTarget(geo, {}, 'jp'), { url: 'https://jp', variant: 'geo:JP' });
+  assert.equal(pickTarget(geo, {}, 'TW').url, 'https://def'); // no matching rule
+  assert.equal(pickTarget(geo, {}, '').url, 'https://def');
+});
+
 test('parseUA extracts os/device/browser', () => {
   const a = parseUA('Mozilla/5.0 (iPhone; CPU iPhone OS 17_4) Safari');
   assert.equal(a.os, 'iOS'); assert.equal(a.device, 'mobile');

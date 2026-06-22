@@ -2535,6 +2535,9 @@ const demo = (()=>{
         ios:'https://apps.apple.com/app/id000',
         android:'https://play.google.com/store/apps/details?id=x',
         default:'https://example.com/app'}}),
+    mk('go','地區活動導流','geo',{ variants:{
+        rules:[{cc:'US',url:'https://us.example.com/promo'},{cc:'JP',url:'https://jp.example.com/promo'}],
+        default:'https://example.com/promo'}}),
     mk('vip','VIP 預購（密碼）','simple',{ target_url:'https://example.com/vip', has_password:true,
         pixel_ga:'G-XXXXXXX' }),
     mk('news','電子報導流','simple',{ target_url:'https://example.com/newsletter',
@@ -2589,7 +2592,8 @@ const demo = (()=>{
         referrer:brk(s+'r',['(direct)','instagram.com','facebook.com','t.co','line.me']),
         suffix: brk(s+'k',['ig','threads','fb','(direct)']),
         variant: l.mode==='ab'? (l.variants||[]).map((v,i)=>({k:v.label||('變體'+i),n:80+hash(s+i)%200}))
-                 : l.mode==='device'? brk(s+'v',['ios','android','default']) : [{k:'default',n:l.clicks}],
+                 : l.mode==='device'? brk(s+'v',['ios','android','default'])
+                 : l.mode==='geo'? brk(s+'g',['geo:US','geo:JP','default']) : [{k:'default',n:l.clicks}],
         hour: Array.from({length:24},(_,h)=>({k:h,n:Math.round(2+ (Math.sin(h/3)+1)*8 + hash(s+h)%6)})) };
       const baseSuffix=(bd.suffix&&bd.suffix.length)?bd.suffix:[{k:'ig',n:120},{k:'fb',n:80},{k:'(none)',n:40}];
       const convSuffix=baseSuffix.map(x=>({k:x.k,n:Math.round(x.n*0.08)})).filter(x=>x.n>0);
@@ -2617,7 +2621,7 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>(
   {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function shortUrl(slug){ const base = state.base ? state.base.replace(/\/$/,'') : 'https://relay.to';
   return base + '/' + slug; }
-function modeLabel(m){ return {simple:'單一',ab:'A/B 分流',device:'裝置導流'}[m]||m; }
+function modeLabel(m){ return {simple:'單一',ab:'A/B 分流',device:'裝置導流',geo:'地區導流'}[m]||m; }
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on');
   clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),1800); }
 function copy(text){ navigator.clipboard.writeText(text).then(()=>toast('已複製：'+text),
@@ -2792,7 +2796,7 @@ async function openStats(id, days=30){
       </div>
     </div>
     <div class="row2" style="margin-bottom:18px">
-      <div class="card"><p class="sect-t">${l.mode==='ab'?'A/B 變體成效':l.mode==='device'?'裝置變體':'KOL 來源（/suffix）'}</p>
+      <div class="card"><p class="sect-t">${l.mode==='ab'?'A/B 變體成效':l.mode==='device'?'裝置變體':l.mode==='geo'?'地區變體':'KOL 來源（/suffix）'}</p>
         ${barList((l.mode==='simple'?d.breakdown.suffix:d.breakdown.variant),true)}</div>
       <div class="card"><p class="sect-t">裝置</p>${barList(d.breakdown.device)}</div>
     </div>
@@ -2867,6 +2871,7 @@ async function openForm(id){
         <button type="button" data-m="simple" class="${l.mode==='simple'?'on':''}" onclick="switchMode('simple')">單一目的地</button>
         <button type="button" data-m="ab" class="${l.mode==='ab'?'on':''}" onclick="switchMode('ab')">A/B 分流</button>
         <button type="button" data-m="device" class="${l.mode==='device'?'on':''}" onclick="switchMode('device')">裝置導流</button>
+        <button type="button" data-m="geo" class="${l.mode==='geo'?'on':''}" onclick="switchMode('geo')">地區導流</button>
       </div></div>
     <div id="modeFields"></div>
 
@@ -2925,11 +2930,18 @@ function renderModeFields(l){
     box.innerHTML=`<div class="fld"><label>變體（依權重隨機分流）</label>
       <div id="abRows">${vs.map(abRow).join('')}</div>
       <button class="btn ghost sm" type="button" onclick="addAbRow()">＋ 新增變體</button></div>`;
-  } else {
+  } else if(m==='device'){
     const d=l.variants&&!Array.isArray(l.variants)?l.variants:{};
     box.innerHTML=`<div class="fld"><label>iOS 目的地</label><input type="url" id="d_ios" value="${esc(d.ios||'')}" placeholder="https://apps.apple.com/..."></div>
       <div class="fld"><label>Android 目的地</label><input type="url" id="d_android" value="${esc(d.android||'')}" placeholder="https://play.google.com/..."></div>
       <div class="fld"><label>其他（預設）</label><input type="url" id="d_default" value="${esc(d.default||'')}" placeholder="https://example.com"></div>`;
+  } else {
+    const d=l.variants&&!Array.isArray(l.variants)?l.variants:{};
+    const rules=Array.isArray(d.rules)&&d.rules.length?d.rules:[{cc:'',url:''}];
+    box.innerHTML=`<div class="fld"><label>地區規則（依訪客國別，比對國碼如 US / JP / TW）</label>
+      <div id="geoRows">${rules.map(geoRow).join('')}</div>
+      <button class="btn ghost sm" type="button" onclick="addGeoRow()">＋ 新增地區</button></div>
+      <div class="fld"><label>其他（預設）</label><input type="url" id="geo_default" value="${esc(d.default||'')}" placeholder="https://example.com"></div>`;
   }
 }
 function abRow(v={url:'',weight:1,label:''}){
@@ -2940,6 +2952,13 @@ function abRow(v={url:'',weight:1,label:''}){
     <button type="button" class="x" onclick="this.closest('.abrow').remove()">×</button></div>`;
 }
 function addAbRow(){ $('#abRows').insertAdjacentHTML('beforeend', abRow()); }
+function geoRow(r={cc:'',url:''}){
+  return `<div class="abrow">
+    <input type="text" class="geo_cc" value="${esc(r.cc||'')}" placeholder="國碼" style="max-width:90px;text-transform:uppercase">
+    <input type="url" class="geo_url" value="${esc(r.url||'')}" placeholder="https://...">
+    <button type="button" class="x" onclick="this.closest('.abrow').remove()">×</button></div>`;
+}
+function addGeoRow(){ $('#geoRows').insertAdjacentHTML('beforeend', geoRow()); }
 function switchMode(m){ formMode=m;
   document.querySelectorAll('#modeSeg button').forEach(b=>b.classList.toggle('on',b.dataset.m===m));
   renderModeFields({mode:m,variants:null,target_url:''}); }
@@ -2974,8 +2993,13 @@ async function submitForm(){
       weight:Number(r.querySelector('.ab_weight').value)||1,
       label:r.querySelector('.ab_label').value.trim(),
     })).filter(v=>v.url);
-  } else {
+  } else if(formMode==='device'){
     body.variants={ ios:$('#d_ios').value.trim(), android:$('#d_android').value.trim(), default:$('#d_default').value.trim() };
+  } else {
+    body.variants={ rules:[...document.querySelectorAll('#geoRows .abrow')].map(r=>({
+      cc:r.querySelector('.geo_cc').value.trim().toUpperCase(),
+      url:r.querySelector('.geo_url').value.trim(),
+    })).filter(r=>r.cc&&r.url), default:$('#geo_default').value.trim() };
   }
   // UTM
   const utm={}; ['source','medium','campaign','term','content'].forEach(k=>{ const val=$('#u_'+k).value.trim(); if(val)utm[k]=val; });

@@ -52,7 +52,7 @@ Runs on your own Cloudflare free tier (100k redirects/day is plenty), no cap on 
 - **Link redirect** — edge redirects, low latency worldwide
 - **Change destination without changing the link** — repoint a posted link any time from the dashboard
 - **Weighted A/B split** — randomly send the same link to different versions by weight
-- **Device routing** — iOS / Android / other to different destinations
+- **Device & geo routing** — send iOS / Android and per-country (`request.cf`) traffic to different destinations
 - **`/suffix` source tracking** — add a suffix (e.g. `/spring/ig`) to count sources separately and see which channel works
 - **Marketing pixel interstitial** — FB Pixel / GA4 / GTM: clickers are added to your retargeting list before they reach the site
 - **Password protection**, **expiry**, **301 / 302**
