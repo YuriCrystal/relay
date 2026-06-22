@@ -24,11 +24,14 @@
 **看得出「哪個管道」真的帶來點擊**
 同一條連結加尾巴分流：`/spring/ig`、`/spring/threads`、`/spring/edm` 各自計數。哪個平台、哪個 KOL 有效，數字攤開來看，不用再猜。
 
+**還看得出「哪個管道」真的*轉換***
+點擊只是一半。用**無 cookie** 的 `/track` 把註冊／成交回報回來，後台就顯示每個 `/suffix` 的轉換數與轉換率——看的是哪個管道帶來*成效*，不只是流量。零 cookie、無跨站身分，這正是 cookie 型工具做不到的隱私式做法。
+
 **點過的人，變成你的再行銷受眾**
 連結可掛 FB Pixel / GA4 / GTM——訪客在進站「之前」就先寫進你的再行銷名單。每一次點擊都是一個受眾觸點，而不是白白流掉。
 
-**同一條連結，A/B 測落地頁**
-依權重分流看哪一版轉換好；或按裝置把 iOS / Android 導去各自的目的地。
+**A/B 測落地頁，還能依裝置 / 國家導流**
+依權重分流看哪一版轉換好；或把流量**依裝置**（iOS / Android）、**依國家**（`request.cf.country`）導去各自的目的地——一條連結，每種受眾看到對的落地頁。
 
 **資料 100% 在你手上**
 連結、點擊、受眾全進你自己的 Cloudflare D1。沒有第三方讀你的流量、沒有人哪天把功能搬進付費牆、不會因為服務收掉就連結全死。
@@ -143,6 +146,8 @@ wrangler deploy
 | GET | `/api/export?format=csv\|json&id=&days=` | 匯出點擊（CSV 或 JSON；可選 `id` / `days` 篩選）|
 
 **公開轉址**：`GET /:slug` 或 `GET /:slug/:suffix`（suffix 用來追來源，例如 `/spring/ig`）。
+
+**轉換回報**（公開、免 Bearer）：`POST /track` 或 `GET /track?slug=…`——回報某個 slug / suffix 的轉換（見下方「轉換追蹤（無 cookie）」段）。可選用 `CONVERSION_TOKEN` 加驗。
 
 ---
 

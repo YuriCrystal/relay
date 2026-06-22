@@ -24,11 +24,14 @@ Campaign rotates, landing page moves, a partner drops out — repoint the link f
 **See which channel actually drives clicks**
 Add a suffix to the same link to split sources: `/spring/ig`, `/spring/threads`, `/spring/edm` each count separately. Which platform, which creator works — read it off the numbers instead of guessing.
 
+**Know which channel actually *converts***
+Clicks are only half the story. Report signups / sales back with a **cookieless** `/track` postback and the dashboard shows conversions and conversion rate per `/suffix` — so you see which channel drives *results*, not just traffic. No cookies, no cross-site identity: the thing cookie-based tools can't do privacy-first.
+
 **Turn clickers into your retargeting audience**
 Links can carry FB Pixel / GA4 / GTM — visitors are written into your retargeting list *before* they even reach the destination. Every click becomes an audience touchpoint instead of leaking away.
 
-**A/B test landing pages on the same link**
-Weighted split to see which variant converts; or route iOS / Android to different destinations by device.
+**A/B test, and route by device or country**
+Weighted split to see which variant converts; or send traffic to different destinations **by device** (iOS / Android) and **by country** (`request.cf.country`) — one link, the right landing page per audience.
 
 **Your data, 100% yours**
 Links, clicks, and audience all go into your own Cloudflare D1. No third party reading your traffic, nobody moving features behind a paywall, no links dying because a service shut down.
@@ -143,6 +146,8 @@ wrangler deploy
 | GET | `/api/export?format=csv\|json&id=&days=` | export clicks (CSV or JSON; optional `id` / `days` filters) |
 
 **Public redirect**: `GET /:slug` or `GET /:slug/:suffix` (suffix tracks the source, e.g. `/spring/ig`).
+
+**Conversion postback** (public, no Bearer): `POST /track` or `GET /track?slug=…` — report a conversion for a slug / suffix (see [Conversion tracking](#conversion-tracking-cookieless)). Optionally gated by a `CONVERSION_TOKEN`.
 
 ---
 
