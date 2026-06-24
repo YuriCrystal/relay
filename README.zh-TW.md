@@ -206,6 +206,15 @@ node tools/rank.mjs data.json
 
 它用轉換率的 **Wilson 下界**排名(讓「1 點擊 1 轉換 = 100%」這種僥倖永遠贏不過有實績的管道)、標出「流量高但不轉換」的來源、告訴你該往哪加碼。零相依。輸入格式見 `tools/sample.stats.json`。
 
+接著 `tools/pick-formula.mjs` 會建議**下一篇該用哪個貼文公式**來衝觸及/點擊率——照真實「突破鐵粉圈」的實證數據排名，可串接計分板(`--data=rank.json`)：
+
+```bash
+node tools/pick-formula.mjs --goal=reach        # 哪個公式最容易被新人看到
+node tools/pick-formula.mjs --no-hype           # 跳過 hype 過重的公式
+```
+
+> 這套 27 公式框架為繁體中文，衍生自 [Hao0321/claude-skill-social-post](https://github.com/Hao0321/claude-skill-social-post)（MIT）——見 `tools/CREDITS.md`。
+
 ---
 
 ## 隱私

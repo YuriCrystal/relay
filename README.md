@@ -206,6 +206,15 @@ node tools/rank.mjs data.json
 
 It ranks channels by a **Wilson lower bound** on conversion rate (so a lucky "1 click, 1 conversion = 100%" never beats a proven channel), flags high-traffic-but-low-conversion sources, and tells you where to lean in. Zero dependencies. See `tools/sample.stats.json` for the input shape.
 
+Then `tools/pick-formula.mjs` recommends **which social-post formula** to write the next post in to maximize reach/CTR — ranked by real break-out-of-follower-bubble evidence, optionally chained to the scoreboard (`--data=rank.json`):
+
+```bash
+node tools/pick-formula.mjs --goal=reach        # which formula gets seen by new people
+node tools/pick-formula.mjs --no-hype           # skip hype-heavy formulas
+```
+
+> The 27-formula framework is in Traditional Chinese and is derived from [Hao0321/claude-skill-social-post](https://github.com/Hao0321/claude-skill-social-post) (MIT) — see `tools/CREDITS.md`.
+
 ---
 
 ## Privacy
