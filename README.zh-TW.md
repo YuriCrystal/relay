@@ -191,6 +191,23 @@ curl -X POST https://<your-relay>/track \
 
 ---
 
+## 內容迴圈 —— 哪個管道值得加碼
+
+`tools/rank.mjs` 把你的點擊＋轉換數據算成**管道計分板**，讓你知道下一篇該主打哪個 `/suffix`——不只看誰帶流量，而是看誰真的會*轉換*。
+
+```bash
+# 從已部署的 Relay 抓單條連結成效:
+curl -s "https://<your-relay>/api/stats/1?days=30" -H "Authorization: Bearer $ADMIN_TOKEN" \
+  | node tools/rank.mjs -
+
+# 或從匯出檔 / 手填的 {channels:[...]} JSON:
+node tools/rank.mjs data.json
+```
+
+它用轉換率的 **Wilson 下界**排名(讓「1 點擊 1 轉換 = 100%」這種僥倖永遠贏不過有實績的管道)、標出「流量高但不轉換」的來源、告訴你該往哪加碼。零相依。輸入格式見 `tools/sample.stats.json`。
+
+---
+
 ## 隱私
 
 Relay 預設就走隱私友善——它追蹤的是「連結點擊」，不是「人」：

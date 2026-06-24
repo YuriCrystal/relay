@@ -1,0 +1,29 @@
+{
+  "link": { "slug": "spring", "title": "Spring campaign" },
+  "total": 1050,
+  "unique": 880,
+  "conversions": {
+    "total": 57,
+    "value": 0,
+    "byEvent": [{ "k": "signup", "n": 40 }, { "k": "purchase", "n": 17 }],
+    "bySuffix": [
+      { "k": "ig", "n": 28 },
+      { "k": "edm", "n": 14 },
+      { "k": "threads", "n": 12 },
+      { "k": "(none)", "n": 2 },
+      { "k": "fb", "n": 1 }
+    ]
+  },
+  "series": [],
+  "breakdown": {
+    "suffix": [
+      { "k": "threads", "n": 540 },
+      { "k": "ig", "n": 320 },
+      { "k": "edm", "n": 90 },
+      { "k": "fb", "n": 60 },
+      { "k": "(none)", "n": 40 }
+    ],
+    "variant": [{ "k": "default", "n": 1050 }],
+    "device": [], "os": [], "browser": [], "country": [], "referrer": [], "hour": []
+  }
+}

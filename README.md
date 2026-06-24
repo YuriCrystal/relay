@@ -191,6 +191,23 @@ The dashboard then shows **conversions, conversion rate, and a clicks→conversi
 
 ---
 
+## Content loop — which channel to double down on
+
+`tools/rank.mjs` turns your click + conversion data into a ranked **channel scoreboard**, so you know which `/suffix` to push next — not just which gets traffic, but which actually *converts*.
+
+```bash
+# from a deployed Relay (per-link stats):
+curl -s "https://<your-relay>/api/stats/1?days=30" -H "Authorization: Bearer $ADMIN_TOKEN" \
+  | node tools/rank.mjs -
+
+# or from an exported file / a hand-built {channels:[...]} JSON:
+node tools/rank.mjs data.json
+```
+
+It ranks channels by a **Wilson lower bound** on conversion rate (so a lucky "1 click, 1 conversion = 100%" never beats a proven channel), flags high-traffic-but-low-conversion sources, and tells you where to lean in. Zero dependencies. See `tools/sample.stats.json` for the input shape.
+
+---
+
 ## Privacy
 
 Relay is built to be privacy-friendly by default — it tracks link clicks, not people:
